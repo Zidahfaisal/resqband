@@ -1,0 +1,86 @@
+#include <ESP8266WiFi.h>
+#include <WiFiClientSecure.h>
+#include <TinyGPS++.h>
+
+#define BUTTON D2
+#define LED D7
+#define BUZZER D8
+
+TinyGPSPlus gps;
+WiFiClientSecure client;
+
+const char* ssid = "MECAP";
+const char* password = "8b140b20e7";
+
+String botToken = "8792390860:AAHfwtfnQI6vD2Miy9x2zeYAep5Y2sNkE_8";
+String chatID = "7799004886";
+
+void sendTelegramMessage(String message) {
+  if (client.connect("api.telegram.org", 443)) {
+    String url = "/bot" + botToken + "/sendMessage?chat_id=" + chatID + "&text=" + message;
+    
+    client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+                 "Host: api.telegram.org\r\n" +
+                 "Connection: close\r\n\r\n");
+  }
+}
+
+void setup() {
+  Serial.begin(9600);   // GPS on hardware serial
+  pinMode(BUTTON, INPUT_PULLUP);
+  pinMode(LED, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  client.setInsecure();   // skip certificate validation
+  Serial.println("Rescue Band WiFi Connected");
+}
+
+void loop() {
+
+  // Continuously read GPS
+  while (Serial.available()) {
+    gps.encode(Serial.read());
+  }
+
+  // Button pressed
+  if (digitalRead(BUTTON) == LOW) {
+
+    digitalWrite(LED, HIGH);
+    digitalWrite(BUZZER, HIGH);
+
+    // 1️⃣ Always send emergency pressed message
+    sendTelegramMessage("🚨 Emergency button pressed!");
+
+    delay(1000);
+
+    // 2️⃣ If GPS valid → send location
+    if (gps.location.isValid()) {
+
+      float lat = gps.location.lat();
+      float lng = gps.location.lng();
+
+      String locationMsg = "📍 Live Location:\n";
+      locationMsg += "https://maps.google.com/?q=";
+      locationMsg += String(lat, 6);
+      locationMsg += ",";
+      locationMsg += String(lng, 6);
+
+      sendTelegramMessage(locationMsg);
+
+    } else {
+
+      // 3️⃣ If GPS not valid → send warning
+      sendTelegramMessage("⚠ GPS not locked yet. Please wait...");
+
+    }
+
+    delay(10000);  // prevent spamming
+    digitalWrite(LED, LOW);
+    digitalWrite(BUZZER, LOW);
+  }
+}
